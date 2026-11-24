@@ -17,6 +17,20 @@ Cordys CRM 由 Docker 启动官方镜像。订单、仓库和物流使用本仓�
 
 ## 本地启动
 
+### Windows 初始化脚本
+
+先打开 Docker Desktop，准备一个只包含你自己的 DeepSeek Key 的文件。然后在仓库根目录的 Git Bash 里运行：
+
+```bash
+powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File ./setup-local.ps1 -TrustLocalCA
+```
+
+按提示输入密钥文件路径。脚本会生成测试 Token、本地 HTTPS 证书、私钥和配置，再启动 Docker 服务。使用 `-TrustLocalCA` 表示同意将 CA 公共证书导入 **Windows 当前用户的信任列表**。如果只想先生成配置，可去掉 `-TrustLocalCA` 并加上 `-PrepareOnly`。
+
+脚本会复用已有的配置和 Token。生成的文件位于 `.local/`、`.env` 和 `mock-systems/` 的本地配置目录，由 `.gitignore` 排除。
+
+### 手动启动
+
 1. 安装 Docker Desktop 或 Docker Engine 和 Compose。运行模拟接口的验证脚本还需要 Python 3。
 2. 将根目录的 `.env.example` 复制为 `.env`。填写当前机器上的 DeepSeek Key 文件、服务器证书文件和服务器私钥文件路径。Key 文件只写实际密钥。用于本地 HTTPS 的证书应覆盖 `localhost`，并由访问端信任的 CA 签发。
 3. 将 `mock-systems/crm-connections.example.json` 复制为同目录下的 `crm-connections.json`。为订单、仓库、物流各生成一个测试 Token，分别填入对应的 `token` 字段，并将相同的值分别写入 `mock-systems/tokens/orders.txt`、`warehouse.txt` 和 `logistics.txt`。

@@ -1,6 +1,7 @@
 .env
 .env.*
 !.env.example
+/.local/
 /mock-systems/crm-connections.json
 /mock-systems/tokens/
 /assistant/state/
