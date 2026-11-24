@@ -1,0 +1,10 @@
+.env
+.env.*
+!.env.example
+/mock-systems/crm-connections.json
+/mock-systems/tokens/
+/assistant/state/
+*.key
+*.pem
+*.p12
+*.pfx

@@ -1,0 +1,17 @@
+services:
+  orders:
+    networks:
+      crm:
+        aliases: [cordys-mock-orders]
+  warehouse:
+    networks:
+      crm:
+        aliases: [cordys-mock-warehouse]
+  logistics:
+    networks:
+      crm:
+        aliases: [cordys-mock-logistics]
+networks:
+  crm:
+    external: true
+    name: cordys-local_default

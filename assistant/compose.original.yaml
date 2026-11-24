@@ -1,0 +1,13 @@
+name: cordys-local
+services:
+  crm:
+    image: 1panel/cordys-crm@sha256:1ec7b9a5e04a2f078d448f2ff1d687badbbca9393f8c94cca796596442765f05
+    container_name: cordys-crm
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8081:8081"
+    volumes:
+      - data:/opt/cordys
+volumes:
+  data:
+    name: cordys-crm-data

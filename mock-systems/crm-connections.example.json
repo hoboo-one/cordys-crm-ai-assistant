@@ -1,0 +1,17 @@
+{
+  "orders": {
+    "local_url": "http://127.0.0.1:18101/api/orders",
+    "crm_container_url": "http://cordys-mock-orders:8000/api/orders",
+    "token": ""
+  },
+  "warehouse": {
+    "local_url": "http://127.0.0.1:18102/api/shipments",
+    "crm_container_url": "http://cordys-mock-warehouse:8000/api/shipments",
+    "token": ""
+  },
+  "logistics": {
+    "local_url": "http://127.0.0.1:18103/api/tracking",
+    "crm_container_url": "http://cordys-mock-logistics:8000/api/tracking",
+    "token": ""
+  }
+}

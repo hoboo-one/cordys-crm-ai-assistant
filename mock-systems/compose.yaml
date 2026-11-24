@@ -1,0 +1,38 @@
+name: cordys-mock
+services:
+  orders:
+    image: python:3.12-alpine@sha256:c5ba3deef00c7758561a0f03c26f44f10589263d40e732b8748e0d1f38f6dd89
+    command: [python, -B, /app/service.py]
+    environment: {SYSTEM: orders}
+    restart: unless-stopped
+    read_only: true
+    user: "65534:65534"
+    ports: ["127.0.0.1:18101:8000"]
+    volumes:
+      - ./service.py:/app/service.py:ro
+      - ./data/orders.json:/app/records.json:ro
+      - ./tokens/orders.txt:/run/mock-token:ro
+  warehouse:
+    image: python:3.12-alpine@sha256:c5ba3deef00c7758561a0f03c26f44f10589263d40e732b8748e0d1f38f6dd89
+    command: [python, -B, /app/service.py]
+    environment: {SYSTEM: warehouse}
+    restart: unless-stopped
+    read_only: true
+    user: "65534:65534"
+    ports: ["127.0.0.1:18102:8000"]
+    volumes:
+      - ./service.py:/app/service.py:ro
+      - ./data/warehouse.json:/app/records.json:ro
+      - ./tokens/warehouse.txt:/run/mock-token:ro
+  logistics:
+    image: python:3.12-alpine@sha256:c5ba3deef00c7758561a0f03c26f44f10589263d40e732b8748e0d1f38f6dd89
+    command: [python, -B, /app/service.py]
+    environment: {SYSTEM: logistics}
+    restart: unless-stopped
+    read_only: true
+    user: "65534:65534"
+    ports: ["127.0.0.1:18103:8000"]
+    volumes:
+      - ./service.py:/app/service.py:ro
+      - ./data/logistics.json:/app/records.json:ro
+      - ./tokens/logistics.txt:/run/mock-token:ro
