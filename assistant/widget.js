@@ -38,44 +38,66 @@
       :host([hidden]){display:none} *{box-sizing:border-box}
       .panel{margin:16px;min-height:calc(100% - 32px);display:flex;flex-direction:column;background:white;border:1px solid #e4e9ea;border-radius:6px}
       .toolbar,footer{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:16px;flex-wrap:wrap}
-      h1{margin:0;font-size:18px;font-weight:600}.toolbar label{display:flex;align-items:center;gap:8px}
-      .filters,footer div{display:flex;gap:8px;align-items:center;flex-wrap:wrap}button,select{font:inherit;color:inherit;border:1px solid #d4ddde;border-radius:4px;background:white;padding:5px 10px}
-      .filters input{font:inherit;width:160px;border:1px solid #d4ddde;border-radius:4px;padding:5px 8px}
+      h1,h2{margin:0;font-size:18px;font-weight:600}.toolbar label{display:grid;gap:4px;color:#516466;font-size:12px}
+      .filters,footer div{display:flex;gap:8px;align-items:end;flex-wrap:wrap}button,select,input,textarea{font:inherit;color:inherit;border:1px solid #d4ddde;border-radius:4px;background:white;padding:5px 10px}
+      .filters input{width:145px}.filters input,.filters select{font-size:14px;color:#253538}
       button{cursor:pointer}button:hover:not(:disabled){color:#117779;border-color:#639d9e}button:disabled{opacity:.5;cursor:default}
-      .table{overflow:auto;flex:1;margin:0 16px}table{width:100%;border-collapse:collapse;min-width:790px;text-align:left}
-      th,td{padding:12px 10px;border-bottom:1px solid #e7edee}th{background:#f6f8f8;color:#516466;font-weight:600;white-space:nowrap}
-      td:nth-child(n+3){white-space:nowrap}td:first-child{font-variant-numeric:tabular-nums;color:#506265}
-      tbody tr:hover{background:#f8fbfb}.state{color:#165b76;background:#eaf4fb;border-radius:4px;padding:3px 7px}
-      .state.completed{color:#236441;background:#e8f4ec}.state.cancelled{color:#576366;background:#edf0f1}
-      .state.problem{color:#944411;background:#fff1df}
-      .action{color:#116e71}.empty{text-align:center;color:#627476;padding:30px}footer{border-top:1px solid #e7edee;color:#526467;padding-right:58px}
-      #notice:not(:empty){margin:0 16px 12px;color:#845019}
-      .completion-form{display:grid;gap:8px;white-space:normal;min-width:220px;margin-top:8px}
-      .completion-form label{display:grid;gap:4px}.completion-form textarea{font:inherit;width:100%;padding:6px;border:1px solid #d4ddde;border-radius:4px;resize:vertical}
-      .result-cell{white-space:normal!important;overflow-wrap:anywhere;min-width:110px}
+      .table{overflow:auto;flex:1;margin:0 16px}table{width:100%;border-collapse:collapse;min-width:940px;text-align:left}
+      th,td{padding:10px;border-bottom:1px solid #e7edee}th{background:#f6f8f8;color:#516466;font-weight:600}
+      th,td{white-space:nowrap}td:first-child{font-variant-numeric:tabular-nums;color:#506265}
+      tbody tr:hover{background:#f8fbfb}.state{display:inline-block;color:#165b76;background:#eaf4fb;border-radius:4px;padding:3px 7px}
+      .state.completed{color:#236441;background:#e8f4ec}.state.neutral{color:#576366;background:#edf0f1}.state.problem{color:#944411;background:#fff1df}
+      .reference,.note-preview{display:block;max-width:220px;overflow:hidden;text-overflow:ellipsis}.note-preview{color:#516466}
+      .note-alert{margin-top:3px;color:#a35716;font-size:12px}
+      .actions{display:flex;align-items:center;gap:6px}.action{color:#116e71}.danger{color:#a83232}.primary{background:#147d82;color:white;border-color:#147d82}
+      .empty{text-align:center;color:#627476;padding:30px}footer{border-top:1px solid #e7edee;color:#526467;padding-right:58px}
+      #notice:not(:empty),.form-error:not(:empty){margin:0 16px 12px;color:#845019}
+      .plan-dialog{width:min(500px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto;border:1px solid #d4ddde;border-radius:8px;padding:20px;color:inherit}
+      .plan-dialog::backdrop{background:#182a3255}.dialog-header,.dialog-actions{display:flex;align-items:center;justify-content:space-between;gap:8px}
+      .dialog-actions{justify-content:flex-end;margin-top:16px}.detail-facts{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px 12px;margin:16px 0}
+      .detail-facts dt{color:#516466}.detail-facts dd{margin:0;overflow-wrap:anywhere;white-space:pre-wrap}
+      .plan-form{display:grid;gap:10px;border-top:1px solid #e7edee;padding-top:12px}.plan-form label{display:grid;gap:4px}
+      .plan-form textarea{width:100%;resize:vertical}.plan-form[hidden]{display:none}.plan-dialog .form-error:not(:empty){margin:6px 0}
     </style>
     <div class="panel">
       <div class="toolbar">
         <h1 id="followup-heading" tabindex="-1">跟进待办</h1>
         <form class="filters" id="plan-filters">
-          <label for="plan-id">待办编号</label><input id="plan-id" placeholder="完整待办编号" inputmode="numeric" pattern="[0-9]{1,24}" maxlength="24">
-          <label for="customer">客户</label><input id="customer" placeholder="客户名称或编号" maxlength="100">
-          <label for="handoff">交接核实状态</label><select id="handoff">
-          <option value="">全部记录</option><option>待处理问题</option><option>未交接</option>
-          <option>待核实</option><option>暂未核实</option><option>未记录</option><option>已交接</option>
-        </select><label for="status">待办进度</label><select id="status">
-          <option value="ALL">全部</option><option value="PREPARED">未开始</option>
-          <option value="UNDERWAY">进行中</option><option value="COMPLETED">已完成</option>
-          <option value="CANCELLED">已取消</option>
-        </select><button type="submit">搜索</button><button id="clear-filters" type="button">清空筛选</button><button id="refresh" type="button">刷新</button></form>
+          <label>待办编号<input id="plan-id" placeholder="完整待办编号" inputmode="numeric" pattern="[0-9]{1,24}" maxlength="24"></label>
+          <label>客户<input id="customer" placeholder="客户名称或编号" maxlength="100"></label>
+          <label>订单号 / 运单号<input id="reference" placeholder="搜索订单或运单" maxlength="64"></label>
+          <label>系统异常<select id="issue"><option value="">全部</option><option value="label_only">只有面单</option>
+            <option value="pending_sync">已交接 · 轨迹待同步</option><option value="no_pickup">暂无揽收记录</option>
+            <option value="logistics_error">物流暂不可用</option><option value="unknown">暂未取得证据</option></select></label>
+          <label>人工交接<select id="handoff"><option value="">全部</option><option>待核实</option><option>未交接</option><option>已交接</option></select></label>
+          <label>待办进度<select id="status"><option value="OPEN">未完成</option><option value="ALL">全部</option>
+            <option value="PREPARED">未开始</option><option value="UNDERWAY">跟进中</option><option value="COMPLETED">已完成</option>
+            <option value="CANCELLED">已取消</option><option value="ARCHIVED">已删除</option></select></label>
+          <button type="submit" class="primary">搜索</button><button id="clear-filters" type="button">清空</button><button id="refresh" type="button">刷新</button></form>
       </div>
       <div id="notice" role="status"></div>
       <div class="table"><table aria-label="我的跟进计划">
-        <thead><tr><th>待办编号</th><th>跟进内容</th><th>关联客户</th><th>负责人</th><th>计划跟进时间</th><th>待办进度</th><th>交接核实状态</th><th>核实备注</th><th>操作</th></tr></thead>
+        <thead><tr><th>待办编号</th><th>跟进内容</th><th>客户</th><th>系统物流</th><th>人工交接</th><th>待办进度</th><th>核实备注</th><th>操作</th></tr></thead>
         <tbody id="plans-list"></tbody>
       </table></div>
       <footer><span id="total"></span><div><button id="prev" type="button">上一页</button><span id="page-number"></span><button id="next" type="button">下一页</button></div></footer>
-    </div>`;
+    </div>
+    <dialog id="plan-detail" class="plan-dialog" aria-labelledby="detail-heading">
+      <div class="dialog-header"><h2 id="detail-heading">待办详情</h2><button id="close-detail" type="button">关闭</button></div>
+      <dl class="detail-facts" id="detail-facts"></dl>
+      <form id="handoff-form" class="plan-form">
+        <label>交接结果<select name="outcome"><option value="unverified">待核实</option><option value="not_handed_off">未交接</option><option value="handed_off">已交接</option></select></label>
+        <label>反馈来源<select name="source"><option value="">请选择</option><option value="warehouse">仓库</option><option value="carrier">承运商</option><option value="other">其他</option></select></label>
+        <label>核实备注<textarea name="note" rows="3" maxlength="400" placeholder="补充确认人、时间或待处理事项（选填）"></textarea></label>
+        <p class="form-error" id="detail-error" role="status"></p>
+        <div class="dialog-actions"><button type="submit" class="primary">保存交接记录</button></div>
+      </form>
+    </dialog>
+    <dialog id="plan-delete" class="plan-dialog" aria-labelledby="delete-heading">
+      <div class="dialog-header"><h2 id="delete-heading">删除待办</h2></div>
+      <p id="delete-message"></p><p class="form-error" id="delete-error" role="status"></p>
+      <div class="dialog-actions"><button id="delete-cancel" type="button" autofocus>取消</button><button id="delete-confirm" type="button" class="danger">确认删除</button></div>
+    </dialog>`;
   const pageFind = selector => page.querySelector(selector);
   const styles = document.createElement("style");
   styles.textContent = `
@@ -91,14 +113,14 @@
   nav.type = "button";
   nav.style.cssText = "display:block;width:calc(100% - 16px);margin:4px 8px;padding:9px 16px;text-align:left;white-space:nowrap;overflow:hidden;border:0;background:transparent;color:inherit;font:inherit;cursor:pointer;border-radius:4px";
   let planPage = 1, generation = 0;
-  let search = {id:"",customer:""};
+  let search = {id:"",customer:"",reference:""};
   let covered, mountedMenu;
   const pageSize = 15;
-  const statusNames = {PREPARED:"未开始",UNDERWAY:"进行中",COMPLETED:"已完成",CANCELLED:"已取消"};
+  const statusNames = {PREPARED:"未开始",UNDERWAY:"跟进中",COMPLETED:"已完成",CANCELLED:"已取消"};
   const dateFormat = new Intl.DateTimeFormat("zh-CN",{year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"});
   function messageRow(text) {
     const row = document.createElement("tr");
-    line(row,"td",text,"empty").colSpan = 9;
+    line(row,"td",text,"empty").colSpan = 8;
     pageFind("#plans-list").replaceChildren(row);
   }
   async function nativeCall(path, payload) {
@@ -110,141 +132,198 @@
     if (!res.ok || data.code !== 100200) throw Error(data.error || "");
     return data.data;
   }
-  function showCompletion(operation, plan, done, recorded) {
-    done.hidden = true;
-    const form = line(operation,"form","","completion-form");
-    form.innerHTML = `
-      <label>核实结果<select name="outcome" required><option value="">请选择</option>
-      <option value="handed_off">已交接</option><option value="not_handed_off">未交接</option>
-      <option value="unverified">暂未核实</option></select></label>
-      <label>核实备注<textarea name="note" rows="3" maxlength="400" required></textarea></label>
-      <div><button type="submit">保存并完成</button> <button type="button">取消</button></div>`;
-    const cancel = form.querySelector('button[type="button"]');
-    const submit = form.querySelector('button[type="submit"]');
-    const {outcome,note} = form.elements;
-    if (recorded) {
-      outcome.value = recorded.outcome_code;
-      note.value = recorded.note;
-      submit.textContent = "保存修改";
+  const handoffNames = {unverified:"待核实",not_handed_off:"未交接",handed_off:"已交接"};
+  const sourceNames = {warehouse:"仓库",carrier:"承运商",other:"其他"};
+  const issueNames = {label_only:"只有面单",pending_sync:"已交接 · 轨迹待同步",no_pickup:"暂无揽收记录",
+    logistics_error:"物流暂不可用",unknown:"暂未取得证据"};
+
+  function formatPlanDate(value) {
+    const date = new Date(value);
+    return value && Number.isFinite(date.getTime()) ? dateFormat.format(date) : "—";
+  }
+
+  function makeSelect(cell, label, values, value) {
+    const select = line(cell,"select","");
+    select.setAttribute("aria-label",label);
+    for (const [key, name] of Object.entries(values)) {
+      const option = line(select,"option",name);
+      option.value = key;
     }
-    cancel.onclick = () => {form.remove();done.hidden=false;done.focus();};
-    outcome.focus();
+    select.value = value;
+    return select;
+  }
+
+  async function updateTodo(plan, action, fields, message) {
+    await nativeCall("/_local_assistant/plan",{id:plan.id,action,...fields});
+    if (!plans.hidden) pageFind("#notice").textContent = message;
+  }
+
+  function showPlanDetails(plan, proposedOutcome) {
+    const modal = pageFind("#plan-detail"), facts = pageFind("#detail-facts");
+    const form = pageFind("#handoff-form"), error = pageFind("#detail-error");
+    const {outcome,source,note} = form.elements;
+    const record = plan.record, fact = plan.fact;
+    const fields = [
+      ["待办编号",plan.id],["跟进内容",plan.content],["负责人",plan.ownerName],["计划跟进时间",formatPlanDate(plan.estimatedTime)],
+      ["订单号",plan.order_id],["运单号",plan.tracking_no],["订单系统状态",fact?.order_status],
+      ["物流查询结果",fact?.state],["仓库备注",fact?.warehouse_note],
+      ["仓库更新时间",formatPlanDate(fact?.warehouse_updated_at)],
+      ["物流轨迹",fact?.events?.map(e => (e.event || e.event_type) + " · " + formatPlanDate(e.event_time)).join("\n")],
+      ["查询时间",formatPlanDate(fact?.checked_at)],
+      ["人工交接记录",record.outcome && [handoffNames[record.outcome_code],sourceNames[record.source] || "来源未记录",
+        plan.ownerName,formatPlanDate(record.changed_at),record.note].filter(Boolean).join(" · ")]
+    ];
+    if (plan.archived_at) fields.push(["删除时间",formatPlanDate(plan.archived_at)]);
+    if (record.conflict) fields.push(["记录提醒","备注与交接结果不一致，请向反馈方核对后修正。"]);
+    facts.replaceChildren();
+    for (const [label,value] of fields) {
+      line(facts,"dt",label);
+      line(facts,"dd",value || "—");
+    }
+    form.hidden = !plan.order_id || !!plan.archived_at;
+    form.reset();
+    outcome.value = proposedOutcome || record.outcome_code || "unverified";
+    source.value = record.source || "";
+    note.value = record.note || "";
+    error.textContent = "";
+    const submit = form.querySelector('button[type="submit"]');
     form.onsubmit = async event => {
       event.preventDefault();
-      const text = note.value.trim();
-      if (!text) {note.focus();return;}
-      const result = outcome.value;
-      outcome.disabled = note.disabled = submit.disabled = cancel.disabled = true;
-      pageFind("#notice").textContent = "";
+      if (outcome.value !== "unverified" && !source.value) {
+        error.textContent = "请选择反馈来源。";
+        source.focus();
+        return;
+      }
+      submit.disabled = true;
+      error.textContent = "";
       try {
-        await nativeCall("/_local_assistant/complete",{id:String(plan.id),outcome:result,note:text,edit:!!recorded});
-        if (!plans.hidden && form.isConnected) {
-          pageFind("#notice").textContent = recorded ? "待办 " + plan.id + " 的核实结果已更新。"
-            : "待办 " + plan.id + " 已保存核实结果并完成。";
-          await loadPlans();
-        }
-      } catch (error) {
-        if (!plans.hidden && form.isConnected) pageFind("#notice").textContent =
-          error.message || "未能确认保存结果，请重试或刷新列表核对。";
+        await updateTodo(plan,"handoff",{outcome:outcome.value,source:source.value,note:note.value.trim()},"交接记录已保存。");
+        modal.close();
+        if (!plans.hidden) await loadPlans();
+      } catch (failure) {
+        error.textContent = failure.message || "交接记录未保存，请刷新后重试。";
       } finally {
-        outcome.disabled = note.disabled = submit.disabled = cancel.disabled = false;
+        submit.disabled = false;
       }
     };
+    modal.showModal();
+    if (proposedOutcome && !source.value) source.focus();
   }
+
+  function confirmPlanDeletion(plan) {
+    const modal = pageFind("#plan-delete"), error = pageFind("#delete-error"), confirm = pageFind("#delete-confirm");
+    pageFind("#delete-message").textContent = "删除待办 " + plan.id + "？之后可在「已删除」中恢复。";
+    error.textContent = "";
+    confirm.onclick = async () => {
+      confirm.disabled = true;
+      try {
+        await updateTodo(plan,"archive",{},"待办已删除，可在「已删除」中恢复。");
+        modal.close();
+        if (!plans.hidden) await loadPlans();
+      } catch (failure) {
+        error.textContent = failure.message || "删除失败，请刷新后重试。";
+      } finally {
+        confirm.disabled = false;
+      }
+    };
+    modal.showModal();
+  }
+
+  pageFind("#close-detail").onclick = () => pageFind("#plan-detail").close();
+  pageFind("#delete-cancel").onclick = () => pageFind("#plan-delete").close();
+
+  function renderPlan(list, plan) {
+    const row = line(list,"tr","");
+    const record = plan.record;
+    line(row,"td",plan.id);
+    const content = line(row,"td","");
+    const reference = line(content,"span",plan.order_id
+      ? plan.order_id + " · " + plan.tracking_no : plan.content || "—","reference");
+    reference.title = plan.content || "";
+    line(row,"td",plan.customerName || "—");
+    const logistics = issueNames[plan.issue] || plan.fact?.state || "—";
+    line(line(row,"td",""),"span",logistics,"state " + (plan.issue ? "problem" : plan.fact ? "completed" : "neutral"));
+    const handoff = line(row,"td","");
+    const handoffValue = record.outcome_code || "unverified";
+    if (plan.order_id && !plan.archived_at) {
+      const select = makeSelect(handoff,"人工交接 " + plan.id,handoffNames,handoffValue);
+      select.onchange = () => {
+        const next = select.value;
+        select.value = handoffValue;
+        showPlanDetails(plan,next);
+      };
+    } else {
+      line(handoff,"span",plan.order_id ? handoffNames[handoffValue] : "—","state neutral");
+    }
+    const progress = line(row,"td","");
+    if (!plan.archived_at && plan.status !== "CANCELLED" && statusNames[plan.status]) {
+      const {CANCELLED,...activeStatuses} = statusNames;
+      const select = makeSelect(progress,"待办进度 " + plan.id,activeStatuses,plan.status);
+      select.onchange = async () => {
+        select.disabled = true;
+        try {
+          await updateTodo(plan,"progress",{progress:select.value},"待办进度已更新。");
+          if (!plans.hidden) await loadPlans();
+        } catch (failure) {
+          select.value = plan.status;
+          pageFind("#notice").textContent = failure.message || "进度更新失败，请刷新后重试。";
+        } finally {
+          select.disabled = false;
+        }
+      };
+    } else {
+      line(progress,"span",statusNames[plan.status] || plan.status || "—","state neutral");
+    }
+    const noteCell = line(row,"td","");
+    const preview = line(noteCell,"span",record.note || "—","note-preview");
+    preview.title = record.note || "";
+    if (record.conflict) line(noteCell,"small","交接与备注待核对","note-alert");
+    const operation = line(line(row,"td",""),"div","","actions");
+    line(operation,"button","详情","action").onclick = () => showPlanDetails(plan);
+    if (plan.archived_at) {
+      const restore = line(operation,"button","恢复","action");
+      restore.onclick = async () => {
+        restore.disabled = true;
+        try {
+          await updateTodo(plan,"restore",{},"待办已恢复。切换到「全部」可查看。");
+          if (!plans.hidden) await loadPlans();
+        } catch (failure) {
+          pageFind("#notice").textContent = failure.message || "恢复失败，请刷新后重试。";
+        } finally {
+          restore.disabled = false;
+        }
+      };
+    } else {
+      line(operation,"button","删除","danger").onclick = () => confirmPlanDeletion(plan);
+    }
+  }
+
   async function loadPlans() {
     const ticket = ++generation, list = pageFind("#plans-list");
     messageRow("正在读取跟进计划…");
     pageFind("#total").textContent = pageFind("#page-number").textContent = "";
     pageFind("#prev").disabled = pageFind("#next").disabled = true;
     try {
-      const wanted = pageFind("#handoff").value;
-      const progress = pageFind("#status").value;
-      const res = wanted || search.id || search.customer
-        ? await nativeCall("/_local_assistant/problems",{...search,status:wanted,progress,page:planPage})
-        : await nativeCall("/personal/center/follow/plan/list",{sourceId:"NULL",status:progress,myPlan:true,current:planPage,pageSize});
+      const filter = pageFind("#status").value;
+      const archived = filter === "ARCHIVED";
+      const res = await nativeCall("/_local_assistant/problems",{...search,status:pageFind("#handoff").value,
+        issue:pageFind("#issue").value,progress:archived ? "ALL" : filter,archived,page:planPage});
       if (ticket !== generation) return;
       const lastPage = Math.max(1,Math.ceil(res.total / pageSize));
       if (planPage > lastPage) {
         planPage = lastPage;
         return loadPlans();
       }
-      const completedIds = res.list.filter(plan => plan.status === "COMPLETED").map(plan => String(plan.id));
-      const results = completedIds.length
-        ? await nativeCall("/_local_assistant/results",{ids:completedIds}).catch(() => null) : {};
-      if (ticket !== generation) return;
       list.replaceChildren();
-      if (!res.list.length) messageRow("暂无跟进待办");
-      for (const plan of res.list) {
-        const row = line(list,"tr","");
-        for (const value of [plan.id,plan.content,plan.customerName,plan.ownerName,
-          Number.isFinite(plan.estimatedTime) && plan.estimatedTime > 0 ? dateFormat.format(plan.estimatedTime) : "—"]) {
-          line(row,"td",value || "—");
-        }
-        line(line(row,"td",""),"span",statusNames[plan.status] || plan.status,"state cancelled");
-        const recorded = results?.[plan.id];
-        const handoff = plan.handoff_state || recorded?.outcome
-          || (plan.status === "COMPLETED" ? (results ? "未记录" : "读取失败") : plan.status === "CANCELLED" ? "—" : "待核实");
-        const tone = handoff === "已交接" ? "completed" : ["未交接","暂未核实","待核实"].includes(handoff) ? "problem" : "cancelled";
-        line(line(row,"td",""),"span",handoff,"state " + tone);
-        line(row,"td",recorded?.note || "—","result-cell");
-        const operation = line(row,"td","");
-        if (plan.type === "CUSTOMER" && ["PREPARED","UNDERWAY"].includes(plan.status)) {
-          const done = line(operation,"button","标记完成","action");
-          done.onclick = () => showCompletion(operation,plan,done);
-        } else if (plan.status === "COMPLETED" && recorded) {
-          const edit = line(operation,"button","编辑核实结果","action");
-          edit.onclick = () => showCompletion(operation,plan,edit,recorded);
-          if (/^联系仓库，核实 O-\d+ 运单 \S+ 是否已交接$/.test(plan.content) &&
-              (recorded.outcome_code !== "handed_off" || recorded.due_at)) {
-            addReviewControls(operation,plan,recorded);
-          }
-        } else {
-          operation.textContent = "—";
-        }
-      }
+      if (!res.list.length) messageRow(archived ? "暂无已删除的待办" : "暂无符合条件的跟进待办");
+      for (const plan of res.list) renderPlan(list,plan);
       pageFind("#total").textContent = "共 " + res.total + " 条";
       pageFind("#page-number").textContent = planPage + " / " + lastPage;
       pageFind("#prev").disabled = planPage <= 1;
       pageFind("#next").disabled = planPage >= lastPage;
-    } catch {if (ticket === generation) messageRow("无法读取跟进待办，请刷新重试。");}
-  }
-  function addReviewControls(operation, plan, record) {
-    const panel = line(operation,"div","","completion-form");
-    if (record.due_at) {
-      const overdue = record.due_at <= Date.now();
-      line(panel,"span",(overdue ? "已到复查时间 · " : "下次复查 · ") + dateFormat.format(record.due_at),
-        overdue ? "state problem" : "");
+    } catch (failure) {
+      if (ticket === generation) messageRow(failure.message || "无法读取跟进待办，请刷新重试。");
     }
-    if (record.review_summary) line(panel,"p",record.review_summary);
-    const due = document.createElement("input");
-    due.type = "datetime-local";
-    due.setAttribute("aria-label","下次复查时间");
-    panel.append(due);
-    const schedule = line(panel,"button","保存复查时间");
-    const check = line(panel,"button","立即复查");
-    async function submit(payload) {
-      schedule.disabled = check.disabled = true;
-      try {
-        const result = await nativeCall("/_local_assistant/review",{id:String(plan.id),...payload});
-        if (!panel.isConnected) return;
-        pageFind("#notice").textContent = result.summary || "已保存下次复查时间。";
-        await loadPlans();
-      } catch (error) {
-        if (panel.isConnected) pageFind("#notice").textContent = error.message || "复查操作失败，请重试。";
-      } finally {
-        schedule.disabled = check.disabled = false;
-      }
-    }
-    schedule.onclick = () => {
-      const timestamp = new Date(due.value).getTime();
-      if (!Number.isFinite(timestamp) || timestamp <= Date.now()) {
-        pageFind("#notice").textContent = "请选择将来的复查时间。";
-        due.focus();
-        return;
-      }
-      submit({due_at:timestamp});
-    };
-    check.onclick = () => submit({});
   }
   function syncPlans(sider) {
     const content = sider?.nextElementSibling;
@@ -256,6 +335,8 @@
       }
       if (!plans.hidden) {
         plans.hidden = true;
+        pageFind("#plan-detail").close();
+        pageFind("#plan-delete").close();
         generation++;
         pageFind("#plans-list").replaceChildren();
         pageFind("#notice").textContent = "";
@@ -274,7 +355,7 @@
       plans.hidden = false;
       planPage = 1;
       pageFind("#plan-filters").reset();
-      search = {id:"",customer:""};
+      search = {id:"",customer:"",reference:""};
       loadPlans();
     }
   }
@@ -304,15 +385,16 @@
     pageFind("#notice").textContent = "";
     loadPlans();
   }
-  pageFind("#status").onchange = pageFind("#handoff").onchange = changeFilter;
+  pageFind("#status").onchange = pageFind("#handoff").onchange = pageFind("#issue").onchange = changeFilter;
   pageFind("#plan-filters").onsubmit = event => {
     event.preventDefault();
-    search = {id:pageFind("#plan-id").value.trim(),customer:pageFind("#customer").value.trim()};
+    search = {id:pageFind("#plan-id").value.trim(),customer:pageFind("#customer").value.trim(),
+      reference:pageFind("#reference").value.trim()};
     changeFilter();
   };
   pageFind("#clear-filters").onclick = () => {
     pageFind("#plan-filters").reset();
-    search = {id:"",customer:""};
+    search = {id:"",customer:"",reference:""};
     changeFilter();
   };
   let session, controller, chatId;

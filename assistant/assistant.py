@@ -3,7 +3,7 @@ import logging
 import re
 import sqlite3
 from collections import OrderedDict
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -13,16 +13,17 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from uuid import uuid4
 from followup import (
-    CRMError, OUTCOMES, complete_plan, follow, needs_handoff_check,
-    crm, filter_plans, read_history, read_results, update_review, warehouse_next_step,
+    CRMError, ISSUES, OUTCOMES, PROGRESS, SOURCES, complete_plan, follow, needs_handoff_check,
+    filter_plans, manage_plan, read_history, read_results, warehouse_next_step,
 )
 
 CONNECTIONS = json.loads(Path("/config/connections.json").read_text())
 CUSTOMER_MAP = json.loads(Path("/config/customer-map.json").read_text())
 HIDDEN_ORDER = "未找到可访问的订单。"
 TRACKING_POOL = ThreadPoolExecutor(max_workers=6)
+PLAN_FACTS_POOL = ThreadPoolExecutor(max_workers=4)
 MODEL = "deepseek-flash"
-MODEL_SLOTS = BoundedSemaphore(4)
+MODEL_SLOTS = BoundedSemaphore(30)
 CHATS = OrderedDict()
 CHAT_LOCK = Lock()
 
@@ -251,20 +252,87 @@ def advise(result, selected):
     return messages or ["按当前查询结果，这次无需创建核实交接的待办。"]
 
 
+def plan_facts(rows, user, auth):
+    def lookup(order):
+        try:
+            return diagnose(order, user, auth)
+        except (Problem, OSError, ValueError, KeyError):
+            return None
+
+    orders = dict.fromkeys(row["order_id"] for row in rows if row["order_id"])
+    work = {order: PLAN_FACTS_POOL.submit(lookup, order) for order in orders}
+    _, pending = wait(work.values(), timeout=8)
+    for future in pending:
+        future.cancel()
+    resolved = {order: future.result() for order, future in work.items() if future not in pending}
+    facts = {}
+    checked_at = int(datetime.now(timezone.utc).timestamp() * 1000)
+    for row in rows:
+        result = resolved.get(row["order_id"])
+        if not result or CUSTOMER_MAP.get(result["order"]["customer_id"]) != row.get("customerId"):
+            continue
+        matches = [p for p in result["packages"] if p["tracking_no"] == row["tracking_no"]]
+        if len(matches) != 1:
+            continue
+        parcel = matches[0]
+        facts[row["id"]] = {"state":parcel["state"], "events":parcel["events"],
+                            "carrier":parcel["carrier"], "warehouse_note":parcel.get("remark"),
+                            "warehouse_updated_at":parcel.get("updated_at"),
+                            "order_status":result["order"].get("order_status"), "checked_at":checked_at}
+    return facts
+
+
+def update_plan_request(request, user, auth):
+    plan_id, action = request.get("id"), request.get("action")
+    if not valid_plan_id(plan_id) or action not in ("progress", "handoff", "archive", "restore"):
+        raise Problem(400, "待办操作无效。")
+    values = {}
+    if action == "progress":
+        progress = request.get("progress")
+        if progress not in ("PREPARED", "UNDERWAY", "COMPLETED"):
+            raise Problem(400, "请选择有效的待办进度。")
+        values["progress"] = progress
+    if action == "handoff":
+        outcome, source, note = request.get("outcome"), request.get("source", ""), request.get("note", "")
+        if (not isinstance(outcome, str) or outcome not in OUTCOMES or not isinstance(source, str)
+                or source not in SOURCES | {""} or not isinstance(note, str) or len(note.strip()) > 400):
+            raise Problem(400, "请选择有效的交接结果，备注限 400 字。")
+        if outcome != "unverified" and not source:
+            raise Problem(400, "请选择确认交接结果的反馈来源。")
+        values = {"outcome":outcome, "source":source, "note":note.strip()}
+    try:
+        manage_plan(auth, user, plan_id, action, values)
+    except CRMError as exc:
+        if exc.code == 100409:
+            raise Problem(409, "这条待办当前无法修改，请刷新列表确认状态。") from exc
+        if exc.code == 100400:
+            raise Problem(400, "此待办未关联可核实的订单和运单。") from exc
+        if exc.code in (100401, 100403, 100404):
+            raise Problem(403, "你无权修改这条待办。") from exc
+        raise
+    return {}
+
+
 def plan_request(path, request, user, auth):
     if path == "/_local_assistant/review":
-        return review_plan(request,user,auth)
+        raise Problem(410, "复查操作已移除，请在待办详情中查看物流证据。")
+    if path == "/_local_assistant/plan":
+        return update_plan_request(request, user, auth)
     if path == "/_local_assistant/problems":
         page, wanted = request.get("page"), request.get("status")
         progress = request.get("progress","ALL")
         plan_id, customer = request.get("id",""), request.get("customer","")
+        reference, issue, archived = request.get("reference", ""), request.get("issue", ""), request.get("archived", False)
         if (type(page) is not int or page < 1
                 or wanted not in ("","待处理问题","未交接","暂未核实","待核实","未记录","已交接")
-                or progress not in ("ALL","PREPARED","UNDERWAY","COMPLETED","CANCELLED")
+                or not isinstance(progress, str) or progress not in PROGRESS | {"OPEN", "ALL"}
                 or (plan_id != "" and not valid_plan_id(plan_id))
-                or not isinstance(customer,str) or len(customer) > 100):
+                or not isinstance(customer,str) or len(customer) > 100
+                or not isinstance(reference, str) or len(reference) > 64
+                or not isinstance(issue, str) or issue not in ISSUES | {""} or not isinstance(archived, bool)):
             raise Problem(400, "筛选条件无效。待办编号请输入完整数字。")
-        return filter_plans(auth, user, page, 15, wanted, progress, plan_id, customer.strip().casefold())
+        return filter_plans(auth, user, page, 15, wanted, progress, plan_id, customer.strip().casefold(),
+                            reference.strip().casefold(), issue, archived, lambda rows: plan_facts(rows, user, auth))
     if path == "/_local_assistant/results":
         ids = request.get("ids")
         if not isinstance(ids,list) or len(ids) > 15 or any(not valid_plan_id(i) for i in ids):
@@ -290,48 +358,6 @@ def plan_request(path, request, user, auth):
 
 def valid_plan_id(value):
     return isinstance(value,str) and re.fullmatch(r"[0-9]{1,24}",value)
-
-
-def review_plan(request, user, auth):
-    plan_id = request.get("id")
-    if not valid_plan_id(plan_id):
-        raise Problem(400,"待办编号无效。")
-    saved = read_results([plan_id],user).get(plan_id)
-    if not saved:
-        raise Problem(404,"未找到可复查的核实记录。")
-    try:
-        plan = crm(auth,"/account/follow/plan/get/" + plan_id)
-    except CRMError as exc:
-        if exc.code in (100401,100403,100404):
-            raise Problem(404,"未找到可复查的核实记录。") from exc
-        raise
-    if plan["owner"] != user or plan["status"] != "COMPLETED":
-        raise Problem(404,"未找到可复查的核实记录。")
-    target = re.fullmatch(r"联系仓库，核实 (O-[0-9]{1,12}) 运单 (\S+) 是否已交接",plan["content"])
-    if not target:
-        raise Problem(400,"此待办缺少可识别的运单。")
-    if "due_at" in request:
-        due = request["due_at"]
-        if type(due) is not int or due <= datetime.now(timezone.utc).timestamp()*1000:
-            raise Problem(400,"请选择将来的复查时间。")
-        update_review(plan_id,due_at=due)
-        return {}
-    order,tracking = target.groups()
-    result = diagnose(order,user,auth)
-    if CUSTOMER_MAP.get(result["order"]["customer_id"]) != plan["customerId"]:
-        raise Problem(409,"订单和待办的客户归属不一致。")
-    matching = [p for p in result["packages"] if p["tracking_no"] == tracking]
-    if len(matching) != 1 or matching[0]["state"] == "物流查询失败":
-        raise Problem(502,"物流复查未取得有效结果，请稍后重试。")
-    parcel = matching[0]
-    picked = next((event for event in parcel["events"] if event["event_type"] == "PICKED_UP"),None)
-    if picked:
-        summary = "承运商已揽收：" + picked["event_time"]
-        complete_plan(auth,user,plan_id,"handed_off",summary,edit=True)
-    else:
-        summary = "承运商暂无揽收记录，请继续向仓库跟进。"
-    update_review(plan_id,summary=summary,resolved=bool(picked))
-    return {"summary":summary}
 
 
 def chat_tool(name, description, properties=None):
@@ -528,7 +554,7 @@ class Handler(BaseHTTPRequestHandler):
         request_id = uuid4().hex
         started = datetime.now(timezone.utc)
         try:
-            if self.path not in ("/_local_assistant/chat","/_local_assistant/order","/_local_assistant/complete","/_local_assistant/results","/_local_assistant/problems","/_local_assistant/review"):
+            if self.path not in ("/_local_assistant/chat","/_local_assistant/order","/_local_assistant/complete","/_local_assistant/results","/_local_assistant/problems","/_local_assistant/plan","/_local_assistant/review"):
                 raise Problem(404, "接口不存在。")
             user_id, auth = check_session(self.headers)
             size = int(self.headers.get("Content-Length", 0))

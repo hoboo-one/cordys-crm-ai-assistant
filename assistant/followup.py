@@ -12,10 +12,15 @@ DB = "/state/followup.sqlite"
 WRITE_LOCK = Lock()
 OPEN = {"PREPARED", "UNDERWAY"}
 OUTCOMES = {"handed_off": "已交接", "not_handed_off": "未交接", "unverified": "暂未核实"}
+PROGRESS = OPEN | {"COMPLETED", "CANCELLED"}
+SOURCES = {"warehouse", "carrier", "other"}
+ISSUES = {"label_only", "pending_sync", "no_pickup", "logistics_error", "unknown"}
+ORDER_PLAN = re.compile(r"联系仓库，核实 (O-[0-9]{1,12}) 运单 (\S+) 是否已交接")
 
 
 def warehouse_next_step(parcel):
-    previous = parcel.get("previous_plan") or {}
+    current = parcel.get("open_plan") or {}
+    previous = current if current.get("outcome") else (parcel.get("previous_plan") or {})
     if previous.get("outcome") != "未交接" or parcel["state"] == "已揽收":
         return None
     note = previous.get("note", "")
@@ -80,6 +85,32 @@ def result_table(db):
                   (plan_id TEXT PRIMARY KEY, due_at INTEGER NOT NULL, reviewed_at INTEGER, summary TEXT)""")
 
 
+def metadata_table(db):
+    db.execute("""CREATE TABLE IF NOT EXISTS plan_metadata
+                  (plan_id TEXT PRIMARY KEY, owner TEXT NOT NULL,
+                   source TEXT NOT NULL DEFAULT '', archived_at INTEGER)""")
+
+
+def read_metadata(ids, owner=None):
+    if not ids:
+        return {}
+    placeholders = ",".join("?" for _ in ids)
+    sql = f"SELECT plan_id, source, archived_at FROM plan_metadata WHERE plan_id IN ({placeholders})"
+    params = list(ids)
+    if owner is not None:
+        sql += " AND owner=?"
+        params.append(owner)
+    with closing(sqlite3.connect(DB)) as db:
+        metadata_table(db)
+        return {plan_id: {"source": source, "archived_at": archived_at}
+                for plan_id, source, archived_at in db.execute(sql, params)}
+
+
+def plan_reference(row):
+    match = ORDER_PLAN.fullmatch(row.get("content") or "") if row.get("type") == "CUSTOMER" else None
+    return match.groups() if match else (None, None)
+
+
 def read_results(ids, owner=None):
     if not ids:
         return {}
@@ -99,29 +130,14 @@ def read_results(ids, owner=None):
                 for plan_id, outcome, note, changed_at,due_at,reviewed_at,summary in db.execute(sql, params)}
 
 
-def update_review(plan_id, due_at=None, summary=None, resolved=False):
-    with WRITE_LOCK, closing(sqlite3.connect(DB)) as db:
-        result_table(db)
-        if summary is None:
-            db.execute("""INSERT INTO plan_reviews (plan_id,due_at) VALUES (?,?)
-                          ON CONFLICT(plan_id) DO UPDATE SET due_at=excluded.due_at""",(plan_id,due_at))
-        else:
-            db.execute("""INSERT INTO plan_reviews VALUES (?,?,?,?)
-                          ON CONFLICT(plan_id) DO UPDATE SET reviewed_at=excluded.reviewed_at,
-                          summary=excluded.summary, due_at=CASE WHEN ? THEN 0 ELSE plan_reviews.due_at END""",
-                       (plan_id,0,int(time.time()*1000),summary,resolved))
-        db.commit()
-
-
-def save_result(db, plan_id, user, outcome, note, previous):
-    if previous == (user, outcome, note):
+def save_result(db, plan_id, user, outcome, note, previous, force=False):
+    if previous == (user, outcome, note) and not force:
         return
     db.execute("""INSERT INTO plan_result_changes
                   (plan_id,actor,changed_at,previous_outcome,previous_note,outcome,note)
                   VALUES (?,?,?,?,?,?,?)""",
                (plan_id,user,int(time.time()*1000),*(previous[1:] if previous else (None,None)),outcome,note))
     db.execute("INSERT OR REPLACE INTO plan_results VALUES (?,?,?,?)", (plan_id,user,outcome,note))
-    db.commit()
 
 
 def complete_plan(auth, user, plan_id, outcome, note, edit=False):
@@ -129,6 +145,8 @@ def complete_plan(auth, user, plan_id, outcome, note, edit=False):
         plan = crm(auth, "/account/follow/plan/get/" + plan_id)
         if not plan or plan["owner"] != user or plan["type"] != "CUSTOMER":
             raise CRMError(100403)
+        if read_metadata([plan_id], owner=user).get(plan_id, {}).get("archived_at"):
+            raise CRMError(100409)
         result_table(db)
         saved = db.execute("SELECT owner, outcome, note FROM plan_results WHERE plan_id=?", (plan_id,)).fetchone()
         if edit:
@@ -137,13 +155,53 @@ def complete_plan(auth, user, plan_id, outcome, note, edit=False):
             if saved[0] != user:
                 raise CRMError(100403)
             save_result(db,plan_id,user,outcome,note,saved)
+            db.commit()
             return
         if plan["status"] == "COMPLETED" and saved == (user, outcome, note):
             return
         if plan["status"] not in OPEN:
             raise CRMError(100409)
         save_result(db,plan_id,user,outcome,note,saved)
+        db.commit()
         crm(auth, "/account/follow/plan/status/update", {"id":plan_id,"status":"COMPLETED"})
+
+
+def manage_plan(auth, user, plan_id, action, values):
+    with WRITE_LOCK, closing(sqlite3.connect(DB)) as db, db:
+        path = "/account/follow/plan/get/" + plan_id
+        plan = crm(auth, path)
+        if not plan or plan.get("owner") != user:
+            raise CRMError(100403)
+        metadata_table(db)
+        saved = db.execute("SELECT source, archived_at FROM plan_metadata WHERE plan_id=? AND owner=?",
+                           (plan_id, user)).fetchone()
+        source, archived_at = saved or ("", None)
+        if action in {"archive", "restore"}:
+            archive_time = (archived_at or int(time.time() * 1000)) if action == "archive" else None
+            db.execute("""INSERT INTO plan_metadata (plan_id,owner,archived_at) VALUES (?,?,?)
+                          ON CONFLICT(plan_id) DO UPDATE SET owner=excluded.owner, archived_at=excluded.archived_at""",
+                       (plan_id, user, archive_time))
+            return
+        if archived_at:
+            raise CRMError(100409)
+        if action == "progress":
+            status = values["progress"]
+            if plan["status"] != status:
+                crm(auth, "/account/follow/plan/status/update", {"id": plan_id, "status": status})
+                if crm(auth, path).get("status") != status:
+                    raise CRMError(100409)
+            return
+        if not plan_reference(plan)[0]:
+            raise CRMError(100400)
+        result_table(db)
+        previous = db.execute("SELECT owner,outcome,note FROM plan_results WHERE plan_id=?", (plan_id,)).fetchone()
+        if previous and previous[0] != user:
+            raise CRMError(100403)
+        new_source = values["source"]
+        save_result(db, plan_id, user, values["outcome"], values["note"], previous, force=source != new_source)
+        db.execute("""INSERT INTO plan_metadata (plan_id,owner,source) VALUES (?,?,?)
+                      ON CONFLICT(plan_id) DO UPDATE SET owner=excluded.owner, source=excluded.source""",
+                   (plan_id, user, new_source))
 
 
 def read_history(result, customer, auth):
@@ -152,51 +210,96 @@ def read_history(result, customer, auth):
     if not customer or not by_content:
         return
     rows = customer_plans(auth, customer, by_content)
-    records = read_results([str(row["id"]) for row in rows if row["status"] == "COMPLETED"])
+    ids = [str(row["id"]) for row in rows]
+    records = read_results(ids)
+    metadata = read_metadata(ids)
     for row in rows:
         parcel = by_content[row["content"]]
+        plan_id = str(row["id"])
+        info = metadata.get(plan_id, {})
+        if info.get("archived_at"):
+            continue
         field = "open_plan" if row["status"] in OPEN else "previous_plan"
         if row["status"] in OPEN or row["status"] in {"COMPLETED", "CANCELLED"}:
-            plan_id = str(row["id"])
             parcel.setdefault(field, {"id":plan_id,"status":row["status"],
-                                      "created_at":row.get("createTime"), **records.get(plan_id,{})})
+                                       "created_at":row.get("createTime"), "source":info.get("source"),
+                                       **records.get(plan_id,{})})
 
 
-def filter_plans(auth, user, page, size, wanted, progress, plan_id, customer):
+def plan_issue(fact, record):
+    if not fact:
+        return "unknown"
+    if fact["state"] == "物流查询失败":
+        return "logistics_error"
+    if fact["state"] == "已揽收":
+        return ""
+    if record.get("outcome_code") == "handed_off" and not record.get("conflict"):
+        return "pending_sync"
+    events = fact.get("events") or []
+    return "label_only" if events and all(e["event_type"] == "LABEL_CREATED" for e in events) else "no_pickup"
+
+
+def conflicting_handoff(record):
+    state = record.get("outcome")
+    if state not in {"已交接", "未交接"}:
+        return False
+    claimed = re.match(r"\s*(?:(?:仓库|承运商)(?:确认|反馈)[\s:：,，]*)?(已交接|未交接)(?=$|[\s，,。；;])",
+                       record.get("note", ""))
+    return bool(claimed and claimed.group(1) != state)
+
+
+def filter_plans(auth, user, page, size, wanted, progress, plan_id, customer,
+                 reference="", issue="", archived=False, facts=None):
     records = []
     current = 1
     while True:
         data = crm(auth, "/personal/center/follow/plan/list",
-                   {"sourceId":"NULL","status":"ALL" if wanted else progress,"myPlan":True,"current":current,"pageSize":50})
+                   {"sourceId":"NULL", "status":"ALL" if progress == "OPEN" or archived else progress,
+                    "myPlan":True, "current":current, "pageSize":50})
         records.extend(data["list"])
         if current * 50 >= data["total"]:
             break
         current += 1
     records.sort(key=lambda row: (row.get("createTime") or 0, str(row["id"])), reverse=True)
-    def matches(row):
-        return ((not plan_id or str(row["id"]) == plan_id)
-                and (not customer or any(customer in str(row.get(field) or "").casefold()
-                                         for field in ("customerName","customerId")))
-                and (progress == "ALL" or row["status"] == progress))
-
-    if not wanted:
-        matching = [row for row in records if matches(row)]
-        return {"list":matching[(page-1)*size:page*size],"total":len(matching)}
-    latest = {}
-    for row in records:
-        if row["type"] == "CUSTOMER" and row["content"].startswith("联系仓库，核实 ") and row["content"].endswith(" 是否已交接"):
-            latest.setdefault((row["customerId"],row["content"]),row)
-    results = read_results([str(row["id"]) for row in latest.values() if row["status"] == "COMPLETED"], owner=user)
+    ids = [str(row["id"]) for row in records]
+    metadata = read_metadata(ids, owner=user)
+    results = read_results(ids, owner=user)
     matched = []
-    for row in latest.values():
-        if not matches(row):
+    for row in records:
+        row_id = str(row["id"])
+        info = metadata.get(row_id, {})
+        if bool(info.get("archived_at")) != archived or (plan_id and row_id != plan_id):
             continue
-        outcome = results.get(str(row["id"]), {}).get("outcome")
-        state = outcome or ("待核实" if row["status"] in OPEN else "未记录")
-        if state == wanted or (wanted == "待处理问题" and state != "已交接"):
-            row["handoff_state"] = state
-            matched.append(row)
-    return {"list": matched[(page-1)*size:page*size], "total":len(matched)}
+        allowed_status = progress == "ALL" or row["status"] == progress or (progress == "OPEN" and row["status"] in OPEN)
+        if not archived and not allowed_status:
+            continue
+        if customer and not any(customer in str(row.get(field) or "").casefold() for field in ("customerName", "customerId")):
+            continue
+        order, tracking = plan_reference(row)
+        if reference and not any(reference in value.casefold() for value in (order, tracking) if value):
+            continue
+        record = results.get(row_id, {})
+        state = record.get("outcome") or ("待核实" if row["status"] in OPEN else "未记录")
+        if wanted and not (state == wanted or (wanted == "待处理问题" and state != "已交接")
+                           or (wanted == "待核实" and state in {"暂未核实", "未记录"})):
+            continue
+        matched.append({**row, "id":row_id, "order_id":order, "tracking_no":tracking,
+                        "record":{**record, "source":info.get("source", ""), "conflict":conflicting_handoff(record)},
+                        "archived_at":info.get("archived_at")})
+
+    def annotate(rows):
+        resolved = facts(rows) if facts else {}
+        for row in rows:
+            row["fact"] = resolved.get(row["id"])
+            row["issue"] = plan_issue(row["fact"], row["record"]) if row["order_id"] else ""
+
+    if issue:
+        annotate(matched)
+        matched = [row for row in matched if row["issue"] == issue]
+    result = matched[(page-1)*size:page*size]
+    if not issue:
+        annotate(result)
+    return {"list": result, "total":len(matched)}
 
 
 def ensure_plan(auth, user, customer, order, parcel, reopen):
@@ -206,7 +309,8 @@ def ensure_plan(auth, user, customer, order, parcel, reopen):
     with WRITE_LOCK, closing(sqlite3.connect(DB)) as db:
         db.execute("CREATE TABLE IF NOT EXISTS plans (business_key TEXT PRIMARY KEY, plan_id TEXT)")
         known = db.execute("SELECT plan_id FROM plans WHERE business_key=?", (key,)).fetchone()
-        if known and known[0]:
+        archived_known = known and known[0] and read_metadata([known[0]]).get(known[0], {}).get("archived_at")
+        if known and known[0] and not archived_known:
             old = crm(auth, "/account/follow/plan/get/" + known[0])
             if old["customerId"] != customer:
                 return "客户归属待核实，本次未新建。"
@@ -215,11 +319,17 @@ def ensure_plan(auth, user, customer, order, parcel, reopen):
             if old["status"] not in {"COMPLETED", "CANCELLED"}:
                 return "原待办状态待核实，本次未新建。"
         history = customer_plans(auth, customer, {content})
+        metadata = read_metadata([str(row["id"]) for row in history])
+        visible = [row for row in history if not metadata.get(str(row["id"]), {}).get("archived_at")]
+        archived_history = bool(history and not visible)
+        history = visible
         existing = next((str(row["id"]) for row in history if row["status"] in OPEN), None)
         if existing:
             db.execute("INSERT OR REPLACE INTO plans VALUES (?,?)", (key,existing))
             db.commit()
             return "已有待办 · " + existing
+        if archived_known or archived_history:
+            return "这票待办已删除，可在「已删除」列表中恢复。"
         if known and not known[0]:
             return "此前已发出创建请求，结果待核实，本次未重复提交。"
         if not reopen and (history or (known and known[0])):
